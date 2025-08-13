@@ -1,13 +1,17 @@
 import re
 import random
 import requests
+import os
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from telethon import TelegramClient, events
+from telethon.sessions import StringSession
 
-api_id = 29740498
-api_hash = '98b71808f3713906bd6f8eee63582ff4'
-session_name = 'mikesession'
+# Çevre değişkenlerinden alıyoruz (Render Environment Variables)
+api_id = int(os.environ["API_ID"])
+api_hash = os.environ["API_HASH"]
+session_string = os.environ["SESSION_STRING"]
+
 TARGET_CHANNEL_ID = '@lapad_announcement'
 
 CHANNEL_PARSERS = {
@@ -27,7 +31,8 @@ USER_AGENTS = [
 
 BANNER_PATH = "banner.jpg"
 
-client = TelegramClient(session_name, api_id, api_hash)
+# StringSession ile başlat
+client = TelegramClient(StringSession(session_string), api_id, api_hash)
 
 def human_format(num):
     try:
