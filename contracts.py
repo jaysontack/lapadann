@@ -1,13 +1,24 @@
 import os
 import re
+import sys
 import random
 import requests
 from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFont
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 
-# ===================== AYARLAR =====================
+# ======== LOG AYARLARI ========
+def log_success(msg):
+    print(f"\033[92m✅ {msg}\033[0m", flush=True)
+
+def log_error(msg):
+    print(f"\033[91m❌ {msg}\033[0m", flush=True)
+
+def log_info(msg):
+    print(f"\033[94mℹ️ {msg}\033[0m", flush=True)
+
+# ======== ENV AYARLARI ========
 api_id = int(os.environ["API_ID"])
 api_hash = os.environ["API_HASH"]
 session_string = os.environ["SESSION_STRING"]
@@ -31,20 +42,9 @@ CHANNEL_PARSERS = {
     -1001873505928: 'parse_trending_scrape',
 }
 
-# ===================== LOG FONKSIYONLARI =====================
-def log_success(msg):
-    print(f"\033[92m✅ {msg}\033[0m")
-
-def log_error(msg):
-    print(f"\033[91m❌ {msg}\033[0m")
-
-def log_info(msg):
-    print(f"\033[94mℹ️ {msg}\033[0m")
-
-# ===================== TELEGRAM BAĞLANTI =====================
 client = TelegramClient(StringSession(session_string), api_id, api_hash)
 
-# ===================== YARDIMCI FONKSIYONLAR =====================
+# ======== YARDIMCI ========
 def human_format(num):
     try:
         num = float(num)
@@ -141,7 +141,7 @@ def parse_social_links(pair_info):
                     inline_links.append(f"<a href='{url}'>🌐 {label}</a>")
     return " | ".join(inline_links), twitter_username
 
-# ===================== GÖRSEL OLUŞTURMA =====================
+# ======== GÖRSEL ========
 def _textlength(draw, text, font):
     try:
         return int(draw.textlength(text, font=font))
@@ -173,7 +173,6 @@ def generate_image_banner(token_name, symbol, chain, contract, logo_url):
             font_headline = font_token = font_chain = font_contract = ImageFont.load_default()
 
         draw = ImageDraw.Draw(banner)
-
         headline = f"${symbol.upper()} Trending Now Worldwide"
         hx = (banner.width - _textlength(draw, headline, font_headline)) // 2
         draw.text((hx, 40), headline, font=font_headline, fill="white")
@@ -185,22 +184,18 @@ def generate_image_banner(token_name, symbol, chain, contract, logo_url):
         circular_logo = Image.new("RGBA", (logo_size, logo_size), (0, 0, 0, 0))
         circular_logo.paste(logo, (0, 0), mask=mask)
 
-        logo_x = (banner.width - logo_size) // 2
-        logo_y = 120
-        banner.paste(circular_logo, (logo_x, logo_y), circular_logo)
+        banner.paste(circular_logo, ((banner.width - logo_size) // 2, 120), circular_logo)
 
         token_line = f"{token_name} ({symbol.upper()})"
         tx = (banner.width - _textlength(draw, token_line, font_token)) // 2
-        ty = logo_y + logo_size + 20
+        ty = 120 + logo_size + 20
         draw.text((tx, ty), token_line, font=font_token, fill="white")
 
-        chain_y = ty + font_token.size + 12
         cx = (banner.width - _textlength(draw, chain, font_chain)) // 2
-        draw.text((cx, chain_y), chain, font=font_chain, fill="white")
+        draw.text((cx, ty + font_token.size + 12), chain, font=font_chain, fill="white")
 
-        contract_y = chain_y + font_chain.size + 10
         kx = (banner.width - _textlength(draw, contract, font_contract)) // 2
-        draw.text((kx, contract_y), contract, font=font_contract, fill="white")
+        draw.text((kx, ty + font_token.size + 12 + font_chain.size + 10), contract, font=font_contract, fill="white")
 
         out = BytesIO()
         banner.save(out, format="PNG")
@@ -214,7 +209,7 @@ def generate_image_banner(token_name, symbol, chain, contract, logo_url):
         log_error(f"Görsel oluşturulamadı: {e}")
         return None
 
-# ===================== MESAJ OLUŞTURMA =====================
+# ======== MESAJ ========
 def format_pair_message(pair):
     base = pair.get("baseToken", {}) or {}
     symbol = base.get("symbol", "???")
@@ -266,7 +261,7 @@ def format_pair_message(pair):
         return None, None
     return media_file, message
 
-# ===================== EVENT HANDLER =====================
+# ======== EVENT HANDLER ========
 @client.on(events.NewMessage(chats=list(CHANNEL_PARSERS.keys())))
 async def handler(event):
     chat_id = event.chat_id
@@ -276,10 +271,7 @@ async def handler(event):
         return
 
     try:
-        if 'event' in parser_func.__code__.co_varnames:
-            tokens = parser_func(event)
-        else:
-            tokens = parser_func(event.message.message or "")
+        tokens = parser_func(event) if 'event' in parser_func.__code__.co_varnames else parser_func(event.message.message or "")
     except Exception as e:
         log_error(f"Parser hatası: {e}")
         return
@@ -321,8 +313,9 @@ async def handler(event):
                 log_error(f"Gönderim hatası: {e}")
             break
 
-# ===================== ÇALIŞTIRMA =====================
+# ======== MAIN ========
 if __name__ == "__main__":
+    sys.stdout.reconfigure(line_buffering=True)  # Flush için
+    log_success("Bot başlatılıyor...")
     client.start()
-    log_success("Bot başlatıldı...")
     client.run_until_disconnected()
