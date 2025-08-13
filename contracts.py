@@ -182,7 +182,7 @@ def format_pair_message(pair):
     logo_url = base.get("logoUrl")
 
     social_links, twitter_user = parse_social_links(pair)
-    hashtags = f"#lapad #{symbol} #project {twitter_user}".strip()
+    hashtags = f"#lapad #{symbol} #Dexscreener {twitter_user}".strip()
 
     message = f"""
 <b>🔥 Trending Now: {name}</b>
