@@ -24,6 +24,7 @@ session_string = os.environ["SESSION_STRING"]
 
 TARGET_CHANNEL_ID = '@lapad_announcement'
 BANNER_PATH = "banner.jpg"
+FONTS_DIR = "fonts"
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
@@ -158,6 +159,20 @@ def select_best_change(changes: dict):
     return best_val, best_int
 
 # ======== GÖRSEL ========
+def load_fonts():
+    try:
+        font_headline = ImageFont.truetype(os.path.join(FONTS_DIR, "arialbd.ttf"), size=52)
+        font_token    = ImageFont.truetype(os.path.join(FONTS_DIR, "arialbd.ttf"), size=42)
+        font_chain    = ImageFont.truetype(os.path.join(FONTS_DIR, "arial.ttf"),  size=28)
+        font_contract = ImageFont.truetype(os.path.join(FONTS_DIR, "arial.ttf"),  size=24)
+        font_web      = ImageFont.truetype(os.path.join(FONTS_DIR, "arial.ttf"),  size=22)
+        font_change   = ImageFont.truetype(os.path.join(FONTS_DIR, "arialbd.ttf"), size=38)
+        return font_headline, font_token, font_chain, font_contract, font_web, font_change
+    except Exception as e:
+        log_error(f"Font yüklenemedi: {e}, default ile devam.")
+        default = ImageFont.load_default()
+        return default, default, default, default, default, default
+
 def generate_image_banner(token_name, symbol, chain, contract, logo_url, website_url, change, change_interval):
     try:
         if not os.path.exists(BANNER_PATH):
@@ -173,18 +188,8 @@ def generate_image_banner(token_name, symbol, chain, contract, logo_url, website
             return None
         logo = Image.open(BytesIO(resp.content)).convert("RGBA")
 
-        # Font denemesi (fallback load_default)
-        try:
-            font_headline = ImageFont.truetype("arialbd.ttf", size=52)
-            font_token    = ImageFont.truetype("arialbd.ttf", size=42)
-            font_chain    = ImageFont.truetype("arial.ttf",  size=28)
-            font_contract = ImageFont.truetype("arial.ttf",  size=24)
-            font_web      = ImageFont.truetype("arial.ttf",  size=22)
-            font_change   = ImageFont.truetype("arialbd.ttf", size=38)
-        except Exception:
-            log_error("Font yüklenemedi, default font ile devam.")
-            font_headline = font_token = font_chain = font_contract = font_web = font_change = ImageFont.load_default()
-
+        # Fontları yükle
+        font_headline, font_token, font_chain, font_contract, font_web, font_change = load_fonts()
         draw = ImageDraw.Draw(banner)
 
         # Headline
@@ -260,7 +265,7 @@ def format_pair_message(pair):
     social_links, website_url, twitter_user = parse_social_links(pair)
 
     if best_change and best_int:
-        headline = f"{name} is #Trending now Worldwide. {best_change:.0f}% change in last {best_int}."
+        headline = f"{name} is #Trending now Worldwide. {best_change:.0f}% pumped in last {best_int}."
     else:
         headline = f"{name} is #Trending now Worldwide."
 
