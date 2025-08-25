@@ -282,9 +282,9 @@ def format_pair_message(pair):
     if best_change and best_int:
         headline = f"{name} is #Trending now Worldwide. {best_change:.0f}% pumped in last {best_int}."
     else:
-        headline = f"{name} is #Trending now Worldwide."
+        headline = f"🐬 ${(symbol or '').upper()} Trending Now Worldwide"
 
-    hashtags = f"#lapad #{(symbol or '').upper()} #project {twitter_user}".strip()
+    hashtags = f"#lapad #{(symbol or '').upper()} #Dexscreener #BullishMarketCap{twitter_user}".strip()
 
     message = f"""
 <b>{headline}</b>
