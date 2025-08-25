@@ -1,10 +1,9 @@
 import os
 import re
-import sys
 import random
 import requests
 from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 
@@ -18,14 +17,13 @@ def log_error(msg):
 def log_info(msg):
     print(f"\033[94mℹ️ {msg}\033[0m", flush=True)
 
-# ======== ENV AYARLARI ========
+# ======== ENV AYARLARI (Render için) ========
 api_id = int(os.environ["API_ID"])
 api_hash = os.environ["API_HASH"]
 session_string = os.environ["SESSION_STRING"]
 
 TARGET_CHANNEL_ID = '@lapad_announcement'
 BANNER_PATH = "banner.jpg"
-FONTS_DIR = "fonts"
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
@@ -42,6 +40,7 @@ CHANNEL_PARSERS = {
     -1001873505928: 'parse_trending_scrape',
 }
 
+# Telethon Client
 client = TelegramClient(StringSession(session_string), api_id, api_hash)
 
 # ======== YARDIMCI ========
@@ -132,51 +131,68 @@ def parse_social_links(pair_info):
                 else:
                     inline_links.append(f"<a href='{url}'>🔗 Link</a>")
     websites = info.get("websites", [])
+    website_url = ""
     if isinstance(websites, list):
         for site in websites:
             if isinstance(site, dict):
                 url = site.get("url")
-                label = site.get("label", "Website")
-                if url:
-                    inline_links.append(f"<a href='{url}'>🌐 {label}</a>")
-    return " | ".join(inline_links), twitter_username
+                if url and not website_url:
+                    website_url = url
+    return " | ".join(inline_links), website_url, twitter_username
 
-# ======== GÖRSEL ========
 def _textlength(draw, text, font):
-    try:
+    if hasattr(draw, "textlength"):
         return int(draw.textlength(text, font=font))
-    except:
+    try:
+        return draw.textbbox((0, 0), text, font=font)[2]
+    except Exception:
         return len(text) * (font.size if hasattr(font, "size") else 10)
 
-def generate_image_banner(token_name, symbol, chain, contract, logo_url):
+def select_best_change(changes: dict):
+    best_val, best_int = None, None
+    for interval in ["h1", "h6", "h24"]:
+        val = changes.get(interval)
+        if val is not None:
+            if best_val is None or abs(val) > abs(best_val):
+                best_val, best_int = val, interval
+    return best_val, best_int
+
+# ======== GÖRSEL ========
+def generate_image_banner(token_name, symbol, chain, contract, logo_url, website_url, change, change_interval):
     try:
         if not os.path.exists(BANNER_PATH):
-            log_error(f"Banner bulunamadı: {BANNER_PATH}")
+            log_error("Banner bulunamadı!")
             return None
 
         banner = Image.open(BANNER_PATH).convert("RGBA")
+        width, height = banner.size
 
-        log_info(f"Logo indiriliyor: {logo_url}")
         resp = requests.get(logo_url, timeout=8)
         if resp.status_code != 200:
-            log_error(f"Logo indirilemedi! HTTP {resp.status_code}")
+            log_error("Logo indirilemedi!")
             return None
         logo = Image.open(BytesIO(resp.content)).convert("RGBA")
 
+        # Font denemesi (fallback load_default)
         try:
-            font_headline = ImageFont.truetype(os.path.join(FONTS_DIR, "arialbd.ttf"), size=52)
-            font_token = ImageFont.truetype(os.path.join(FONTS_DIR, "arialbd.ttf"), size=46)
-            font_chain = ImageFont.truetype(os.path.join(FONTS_DIR, "arial.ttf"), size=30)
-            font_contract = ImageFont.truetype(os.path.join(FONTS_DIR, "arial.ttf"), size=26)
-        except Exception as e:
-            log_error(f"Font yüklenemedi: {e}")
-            font_headline = font_token = font_chain = font_contract = ImageFont.load_default()
+            font_headline = ImageFont.truetype("arialbd.ttf", size=52)
+            font_token    = ImageFont.truetype("arialbd.ttf", size=42)
+            font_chain    = ImageFont.truetype("arial.ttf",  size=28)
+            font_contract = ImageFont.truetype("arial.ttf",  size=24)
+            font_web      = ImageFont.truetype("arial.ttf",  size=22)
+            font_change   = ImageFont.truetype("arialbd.ttf", size=38)
+        except Exception:
+            log_error("Font yüklenemedi, default font ile devam.")
+            font_headline = font_token = font_chain = font_contract = font_web = font_change = ImageFont.load_default()
 
         draw = ImageDraw.Draw(banner)
-        headline = f"${symbol.upper()} Trending Now Worldwide"
-        hx = (banner.width - _textlength(draw, headline, font_headline)) // 2
-        draw.text((hx, 40), headline, font=font_headline, fill="white")
 
+        # Headline
+        headline = f"${(symbol or '').upper()} Trending Now Worldwide"
+        hx = (width - _textlength(draw, headline, font_headline)) // 2
+        draw.text((hx, 60), headline, font=font_headline, fill="white")
+
+        # Logo
         logo_size = 300
         logo = logo.resize((logo_size, logo_size))
         mask = Image.new("L", (logo_size, logo_size), 0)
@@ -184,29 +200,48 @@ def generate_image_banner(token_name, symbol, chain, contract, logo_url):
         circular_logo = Image.new("RGBA", (logo_size, logo_size), (0, 0, 0, 0))
         circular_logo.paste(logo, (0, 0), mask=mask)
 
-        banner.paste(circular_logo, ((banner.width - logo_size) // 2, 120), circular_logo)
+        logo_x = (width - logo_size) // 2
+        logo_y = 220
+        banner.paste(circular_logo, (logo_x, logo_y), circular_logo)
 
-        token_line = f"{token_name} ({symbol.upper()})"
-        tx = (banner.width - _textlength(draw, token_line, font_token)) // 2
-        ty = 120 + logo_size + 20
-        draw.text((tx, ty), token_line, font=font_token, fill="white")
+        # % Change
+        if change is not None and change_interval:
+            perc_text = f"{change:.1f}%"
+            color = "lime" if change > 0 else "red"
+            perc_w = _textlength(draw, perc_text, font_change)
+            perc_x = (width - perc_w) // 2
+            perc_y = logo_y - 60
+            draw.text((perc_x, perc_y), perc_text, font=font_change, fill=color)
 
-        cx = (banner.width - _textlength(draw, chain, font_chain)) // 2
-        draw.text((cx, ty + font_token.size + 12), chain, font=font_chain, fill="white")
+        # Token line
+        token_line = f"{token_name} ({(symbol or '').upper()})"
+        tx = (width - _textlength(draw, token_line, font_token)) // 2
+        draw.text((tx, logo_y + logo_size + 40), token_line, font=font_token, fill="white")
 
-        kx = (banner.width - _textlength(draw, contract, font_contract)) // 2
-        draw.text((kx, ty + font_token.size + 12 + font_chain.size + 10), contract, font=font_contract, fill="white")
+        # Chain
+        chain_y = logo_y + logo_size + 90
+        cx = (width - _textlength(draw, chain.upper(), font_chain)) // 2
+        draw.text((cx, chain_y), chain.upper(), font=font_chain, fill="white")
+
+        # Contract
+        contract_y = chain_y + 40
+        kx = (width - _textlength(draw, contract, font_contract)) // 2
+        draw.text((kx, contract_y), contract, font=font_contract, fill="white")
+
+        # Website
+        if website_url:
+            wy = height - 80
+            wx = (width - _textlength(draw, website_url, font_web)) // 2
+            draw.text((wx, wy), website_url, font=font_web, fill="white")
 
         out = BytesIO()
         banner.save(out, format="PNG")
         out.name = "banner.png"
         out.seek(0)
-
-        log_success("Görsel başarıyla oluşturuldu.")
+        log_success("Banner başarıyla oluşturuldu.")
         return out
-
     except Exception as e:
-        log_error(f"Görsel oluşturulamadı: {e}")
+        log_error(f"Görsel hatası: {e}")
         return None
 
 # ======== MESAJ ========
@@ -215,19 +250,24 @@ def format_pair_message(pair):
     symbol = base.get("symbol", "???")
     name = base.get("name", "Unknown")
     price = pair.get("priceUsd", "N/A")
-    change = pair.get("priceChange", {}).get("h24", 0)
+    changes = pair.get("priceChange", {}) or {}
+    best_change, best_int = select_best_change(changes)
     liquidity = human_format(pair.get("liquidity", {}).get("usd", 0))
     mcap = human_format(pair.get("fdv", 0))
     contract = base.get("address", "N/A")
     chain = (pair.get("chainId", "EVM") or "EVM").capitalize()
-    info = pair.get("info", {}) or {}
-    header_url = info.get("header")
-    logo_url = base.get("logoUrl") or info.get("imageUrl")
-    social_links, twitter_user = parse_social_links(pair)
-    hashtags = f"#lapad #{symbol.upper()} #Dexscreener {twitter_user}".strip()
+    logo_url = base.get("logoUrl") or pair.get("info", {}).get("imageUrl")
+    social_links, website_url, twitter_user = parse_social_links(pair)
+
+    if best_change and best_int:
+        headline = f"{name} is #Trending now Worldwide. {best_change:.0f}% change in last {best_int}."
+    else:
+        headline = f"{name} is #Trending now Worldwide."
+
+    hashtags = f"#lapad #{(symbol or '').upper()} #project {twitter_user}".strip()
 
     message = f"""
-<b>🔥 Trending Now: {name} is trending now Worldwide</b>
+<b>{headline}</b>
 
 <b>🔗 Chain:</b> {chain}
 <b>🧬 Contract:</b> <code>{contract}</code>
@@ -235,7 +275,6 @@ def format_pair_message(pair):
 <b>💵 Price:</b> ${price}
 <b>🤠 Mcap:</b> ${mcap}
 <b>💧 Liquidity:</b> ${liquidity}
-<b>📈 24H Change:</b> {change}%
 
 {social_links}
 
@@ -244,24 +283,12 @@ def format_pair_message(pair):
 
     media_file = None
     if logo_url:
-        media_file = generate_image_banner(name, symbol, chain, contract, logo_url)
-
-    if not media_file and header_url:
-        try:
-            r = requests.get(header_url, timeout=8)
-            if r.status_code == 200:
-                f = BytesIO(r.content)
-                f.name = "banner.png"
-                f.seek(0)
-                media_file = f
-        except Exception:
-            pass
-
+        media_file = generate_image_banner(name, symbol, chain, contract, logo_url, website_url, best_change, best_int)
     if not media_file:
         return None, None
     return media_file, message
 
-# ======== EVENT HANDLER ========
+# ======== HANDLER ========
 @client.on(events.NewMessage(chats=list(CHANNEL_PARSERS.keys())))
 async def handler(event):
     chat_id = event.chat_id
@@ -269,13 +296,11 @@ async def handler(event):
     parser_func = globals().get(parser_name)
     if not callable(parser_func):
         return
-
     try:
         tokens = parser_func(event) if 'event' in parser_func.__code__.co_varnames else parser_func(event.message.message or "")
     except Exception as e:
         log_error(f"Parser hatası: {e}")
         return
-
     if not tokens:
         return
 
@@ -287,17 +312,14 @@ async def handler(event):
             continue
 
         for pair in pairs:
-            change = pair.get("priceChange", {}).get("h24")
             liquidity_usd = pair.get("liquidity", {}).get("usd", 0) or 0
-            if change is None:
-                continue
             if liquidity_usd < 10000:
                 log_info("Likidite düşük, atlandı.")
                 continue
 
             media, msg = format_pair_message(pair)
             if not media or not msg:
-                log_error("Medya veya mesaj oluşturulamadı.")
+                log_error("Medya/mesaj oluşturulamadı.")
                 break
 
             try:
@@ -315,7 +337,6 @@ async def handler(event):
 
 # ======== MAIN ========
 if __name__ == "__main__":
-    sys.stdout.reconfigure(line_buffering=True)  # Flush için
     log_success("Bot başlatılıyor...")
     client.start()
     client.run_until_disconnected()
