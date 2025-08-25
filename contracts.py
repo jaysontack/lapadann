@@ -158,7 +158,7 @@ def select_best_change(changes: dict):
                 best_val, best_int = val, interval
     return best_val, best_int
 
-# ======== GÖRSEL ========
+# ======== FONT ========
 def load_fonts():
     try:
         font_headline = ImageFont.truetype(os.path.join(FONTS_DIR, "arialbd.ttf"), size=52)
@@ -173,6 +173,7 @@ def load_fonts():
         default = ImageFont.load_default()
         return default, default, default, default, default, default
 
+# ======== GÖRSEL ========
 def generate_image_banner(token_name, symbol, chain, contract, logo_url, website_url, change, change_interval):
     try:
         if not os.path.exists(BANNER_PATH):
@@ -207,16 +208,30 @@ def generate_image_banner(token_name, symbol, chain, contract, logo_url, website
 
         logo_x = (width - logo_size) // 2
         logo_y = 220
+
+        # Golden-Turuncu border
+        border_size = logo_size + 20
+        border = Image.new("RGBA", (border_size, border_size), (0, 0, 0, 0))
+        border_draw = ImageDraw.Draw(border)
+        for i in range(10):
+            color = (255, 215 - i*10, 0 + i*20, 255)  # gold → turuncu
+            border_draw.ellipse(
+                (i, i, border_size - i, border_size - i),
+                outline=color,
+                width=2
+            )
+        banner.alpha_composite(border, (logo_x - 10, logo_y - 10))
+
+        # Logo yapıştır
         banner.paste(circular_logo, (logo_x, logo_y), circular_logo)
 
         # % Change
-        if change is not None and change_interval:
-            perc_text = f"{change:.1f}%"
-            color = "lime" if change > 0 else "red"
+        if change is not None and change_interval and change > 0:
+            perc_text = f"{int(change)}% Increased"
             perc_w = _textlength(draw, perc_text, font_change)
             perc_x = (width - perc_w) // 2
             perc_y = logo_y - 60
-            draw.text((perc_x, perc_y), perc_text, font=font_change, fill=color)
+            draw.text((perc_x, perc_y), perc_text, font=font_change, fill="white")
 
         # Token line
         token_line = f"{token_name} ({(symbol or '').upper()})"
