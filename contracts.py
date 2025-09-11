@@ -359,4 +359,5 @@ async def handler(event):
 if __name__ == "__main__":
     log_success("Bot başlatılıyor...")
     client.start()
+
     client.run_until_disconnected()
