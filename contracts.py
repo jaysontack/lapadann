@@ -242,10 +242,11 @@ def generate_worldwide_banner(tokens):
     try: banner = Image.open(BANNER_PATH).convert("RGBA")
     except: banner = Image.new("RGBA", (1000, 950), (20, 20, 30, 255))
     draw = ImageDraw.Draw(banner)
-    font_title = load_font_simple(58)
-    font_symbol = load_font_simple(26)
-    font_change = load_font_simple(24)
-    font_rank = load_font_simple(28)
+    font_headline, font_token, font_chain, font_contract, font_web, font_change = load_fonts()
+    font_title  = font_headline
+    font_symbol = font_token
+    font_change = font_change
+    font_rank   = font_chain
     title = "Worldwide Top Trends"
     tw = draw.textlength(title, font=font_title)
     draw.text(((banner.width - tw) // 2, 30), title, font=font_title, fill="white")
@@ -413,3 +414,4 @@ if __name__ == "__main__":
     client.start()
     client.loop.create_task(periodic_task())
     client.run_until_disconnected()
+
