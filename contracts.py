@@ -95,7 +95,7 @@ def fetch_token_info(token_address):
         if r.status_code != 200: return None
         return r.json().get("pairs", [])
     except Exception as e:
-        log_error(f"API Hatası: {e}")
+        log_error(f"API error: {e}")
         return None
 
 def parse_social_links(pair_info):
@@ -144,17 +144,17 @@ def load_fonts():
         font_change   = ImageFont.truetype(os.path.join(FONTS_DIR, "arialbd.ttf"), size=38)
         return font_headline, font_token, font_chain, font_contract, font_web, font_change
     except Exception as e:
-        log_error(f"Font yüklenemedi: {e}, default ile devam.")
+        log_error(f"Font load failed: {e}, fallback.")
         d = ImageFont.load_default()
         return d, d, d, d, d, d
 
 def generate_image_banner(token_name, symbol, chain, contract, logo_url, website_url, change, change_interval):
     try:
-        if not os.path.exists(BANNER_PATH): log_error("Banner bulunamadı!"); return None
+        if not os.path.exists(BANNER_PATH): log_error("Banner not found!"); return None
         banner = Image.open(BANNER_PATH).convert("RGBA")
         width, height = banner.size
         resp = requests.get(logo_url, timeout=8)
-        if resp.status_code != 200: log_error("Logo indirilemedi!"); return None
+        if resp.status_code != 200: log_error("Logo download failed!"); return None
         logo = Image.open(BytesIO(resp.content)).convert("RGBA")
         font_headline, font_token, font_chain, font_contract, font_web, font_change = load_fonts()
         draw = ImageDraw.Draw(banner)
@@ -178,7 +178,7 @@ def generate_image_banner(token_name, symbol, chain, contract, logo_url, website
         banner.paste(circular_logo, (logo_x, logo_y), circular_logo)
         if change is not None and change_interval and change > 0:
             perc_text = f"{int(change)}% Increased"
-            perc_w = _textlength(draw, perc_text, font_change)
+            perc_w = _textlength(draw, perc_text, font=font_change)
             perc_x = (width - perc_w) // 2; perc_y = logo_y - 60
             draw.text((perc_x, perc_y), perc_text, font=font_change, fill="white")
         token_line = f"{token_name} ({(symbol or '').upper()})"
@@ -195,10 +195,10 @@ def generate_image_banner(token_name, symbol, chain, contract, logo_url, website
             wx = (width - _textlength(draw, website_url, font_web)) // 2
             draw.text((wx, wy), website_url, font=font_web, fill="white")
         out = BytesIO(); banner.save(out, format="PNG"); out.name = "banner.png"; out.seek(0)
-        log_success("Banner başarıyla oluşturuldu.")
+        log_success("Banner generated.")
         return out
     except Exception as e:
-        log_error(f"Görsel hatası: {e}")
+        log_error(f"Image error: {e}")
         return None
 
 def format_pair_message(pair):
@@ -252,8 +252,8 @@ def generate_worldwide_banner(tokens):
     draw.text(((banner.width - tw) // 2, 30), title, font=font_title, fill="white")
     SIZE_BIG, SIZE_SMALL = 132, 108
     cx = banner.width // 2
-    cy1, cy2, cy3 = 230, 340, 550
-    gap2, gap3 = 360, 320
+    cy1, cy2, cy3 = 230, 360, 600
+    gap2, gap3 = 420, 380
     centers = [(cx, cy1), (cx - gap2 // 2, cy2), (cx + gap2 // 2, cy2), (cx - gap3, cy3), (cx, cy3), (cx + gap3, cy3)]
     def paste_circle(center, size, logo_img, gold=False):
         x = center[0] - size // 2; y = center[1] - size // 2
@@ -266,7 +266,7 @@ def generate_worldwide_banner(tokens):
         else:
             ring.ellipse((2, 2, size - 2, size - 2), outline=(255, 255, 255, 255), width=4)
         banner.paste(circ, (x, y), circ)
-        return x, y
+        return x, y, size
     for idx, (chg, tf, sym, chain, logo_url, url, tw_user, tg_link) in enumerate(tokens[:6]):
         size = SIZE_BIG if idx == 0 else SIZE_SMALL
         try:
@@ -277,10 +277,16 @@ def generate_worldwide_banner(tokens):
                 raise Exception("no logo")
         except:
             logo = Image.open(FALLBACK_LOGO).convert("RGBA").resize((size, size)) if os.path.exists(FALLBACK_LOGO) else Image.new("RGBA", (size, size), (80, 80, 100, 255))
-        x, y = paste_circle(centers[idx], size, logo, gold=(idx == 0))
-        draw.text((x + size // 2 - 15, y - 38), f"#{idx+1}", font=font_rank, fill="yellow")
-        draw.text((x, y + size + 10), f"${sym}", font=font_symbol, fill="white")
-        draw.text((x, y + size + 44), f"+{chg:.0f}% ({tf})", font=font_change, fill=(0, 255, 0, 255))
+        x, y, size = paste_circle(centers[idx], size, logo, gold=(idx == 0))
+        rank_text = f"#{idx+1}"
+        rw = draw.textlength(rank_text, font=font_rank)
+        draw.text((x + (size - rw)//2, y - 38), rank_text, font=font_rank, fill="yellow")
+        sym_text = f"${sym}"
+        sw = draw.textlength(sym_text, font=font_symbol)
+        draw.text((x + (size - sw)//2, y + size + 10), sym_text, font=font_symbol, fill="white")
+        chg_text = f"+{chg:.0f}% ({tf})"
+        cw = draw.textlength(chg_text, font=font_change)
+        draw.text((x + (size - cw)//2, y + size + 44), chg_text, font=font_change, fill=(0, 255, 0, 255))
     out = BytesIO(); banner.save(out, format="PNG"); out.name = "trends.png"; out.seek(0)
     return out
 
@@ -316,7 +322,7 @@ async def collect_contracts_from_channel(limit=200):
     for m in msgs:
         contracts += re.findall(r"0x[a-fA-F0-9]{40}", m.message or "")
     u = list(set(contracts))
-    log_info(f"Worldwide: Kanaldan {len(u)} kontrat toplandı.")
+    log_info(f"Worldwide: collected {len(u)} contracts.")
     return u
 
 async def pick_top_tokens(contracts):
@@ -341,7 +347,7 @@ async def pick_top_tokens(contracts):
                 if s.get("type") == "telegram": tg_link = s.get("url")
             token_changes.append((change, tf, symbol, chain, logo, url, tw_user, tg_link))
     top_tokens = sorted(token_changes, key=lambda x: x[0], reverse=True)[:8]
-    log_info(f"Worldwide: Top token sayısı {len(top_tokens)}.")
+    log_info(f"Worldwide: top token count {len(top_tokens)}.")
     return top_tokens
 
 async def find_existing_trend_message_id():
@@ -355,7 +361,7 @@ async def send_or_update_trends():
     global TREND_MSG_ID
     if TREND_MSG_ID is None:
         TREND_MSG_ID = await find_existing_trend_message_id()
-        if TREND_MSG_ID: log_info(f"Worldwide: mevcut mesaj bulundu #{TREND_MSG_ID}.")
+        if TREND_MSG_ID: log_info(f"Worldwide: found existing message #{TREND_MSG_ID}.")
     contracts = await collect_contracts_from_channel(limit=220)
     tokens = await pick_top_tokens(contracts)
     if tokens:
@@ -363,22 +369,22 @@ async def send_or_update_trends():
         caption = build_trends_caption(tokens)
     else:
         banner = generate_placeholder_trends_banner()
-        caption = "🔥 <b>Worldwide Top #Trends Diamonds Now | Live Update</b>\n\n<i>Henüz yeterli veri yok. Topluyoruz...</i>"
-        log_info("Worldwide: veri yok, placeholder gönderilecek.")
+        caption = "🔥 <b>Worldwide Top #Trends Diamonds Now | Live Update</b>\n\n<i>Not enough data yet. Collecting...</i>"
+        log_info("Worldwide: no data, sending placeholder.")
     if TREND_MSG_ID is None:
         msg = await client.send_file(TARGET_CHANNEL_ID, file=banner, caption=caption, parse_mode="HTML", link_preview=False)
         TREND_MSG_ID = msg.id
-        log_success(f"Worldwide: ilk mesaj gönderildi #{TREND_MSG_ID}.")
+        log_success(f"Worldwide: first message sent #{TREND_MSG_ID}.")
     else:
         await client.edit_message(TARGET_CHANNEL_ID, TREND_MSG_ID, file=banner, text=caption, parse_mode="HTML", link_preview=False)
-        log_success("Worldwide: mesaj güncellendi.")
+        log_success("Worldwide: message updated.")
 
 async def periodic_task():
     while True:
         try:
             await send_or_update_trends()
         except Exception as e:
-            log_error(f"Worldwide hata: {e}")
+            log_error(f"Worldwide error: {e}")
         await asyncio.sleep(3600)
 
 @client.on(events.NewMessage(chats=list(CHANNEL_PARSERS.keys())))
@@ -390,28 +396,27 @@ async def handler(event):
     try:
         tokens = parser_func(event) if "event" in parser_func.__code__.co_varnames else parser_func(event.message.message or "")
     except Exception as e:
-        log_error(f"Parser hatası: {e}")
+        log_error(f"Parser error: {e}")
         return
     if not tokens: return
     for token in tokens:
-        log_info(f"Token bulundu: {token}")
+        log_info(f"Token found: {token}")
         pairs = fetch_token_info(token)
-        if not pairs: log_error("DexScreener sonucu yok."); continue
+        if not pairs: log_error("No DexScreener result."); continue
         for pair in pairs:
             liquidity_usd = pair.get("liquidity", {}).get("usd", 0) or 0
-            if liquidity_usd < 10000: log_info("Likidite düşük, atlandı."); continue
+            if liquidity_usd < 10000: log_info("Low liquidity, skipped."); continue
             media, msg = format_pair_message(pair)
-            if not media or not msg: log_error("Medya/mesaj oluşturulamadı."); break
+            if not media or not msg: log_error("Media/message not created."); break
             try:
                 await client.send_file(TARGET_CHANNEL_ID, file=media, caption=msg, parse_mode="HTML", link_preview=False)
-                log_success(f"Mesaj gönderildi: {token}")
+                log_success(f"Message sent: {token}")
             except Exception as e:
-                log_error(f"Gönderim hatası: {e}")
+                log_error(f"Send error: {e}")
             break
 
 if __name__ == "__main__":
-    log_success("Bot başlatılıyor...")
+    log_success("Bot starting...")
     client.start()
     client.loop.create_task(periodic_task())
     client.run_until_disconnected()
-
