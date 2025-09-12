@@ -174,7 +174,7 @@ def generate_image_banner(token_name, symbol, chain, contract, logo_url, website
         logo = Image.open(BytesIO(resp.content)).convert("RGBA")
         font_headline, font_token, font_chain, font_contract, font_web, font_change = load_fonts()
         draw = ImageDraw.Draw(banner)
-        headline = f"🟢 ${(symbol or '').upper()} <a href='https://t.me/lapad_announcement'>#Trending</a> Now Worldwide"
+        headline = f"🟢 ${(symbol or '').upper()} #Trending Now Worldwide"
         hx = (width - _textlength(draw, headline, font_headline)) // 2
         draw.text((hx, 60), headline, font=font_headline, fill="white")
         logo_size = 300
@@ -230,7 +230,7 @@ def format_pair_message(pair):
     chain = (pair.get("chainId", "EVM") or "EVM").capitalize()
     logo_url = base.get("logoUrl") or pair.get("info", {}).get("imageUrl")
     social_links, website_url, twitter_user = parse_social_links(pair)
-    headline = f"{name} is #Trending now Worldwide. {best_change:.0f}% pumped in last {best_int}." if best_change and best_int else f"🐬 ${(symbol or '').upper()} Trending Now Worldwide"
+    headline = f"🟢 {name} is <a href='https://t.me/lapad_announcement'>#Trending</a> now Worldwide{f'. {best_change:.0f}% pumped in last {best_int}.' if best_change and best_int else ''}"
     hashtags = f"#lapad #{(symbol or '').upper()} #Dexscreener #BullishMarketCap {twitter_user}".strip()
     message = f"""
 <b>{headline}</b>
@@ -378,7 +378,7 @@ async def send_or_update_trends():
     if TREND_MSG_ID is None:
         TREND_MSG_ID = await find_existing_trend_message_id()
         if TREND_MSG_ID: log_info(f"Worldwide: found existing message #{TREND_MSG_ID}.")
-    contracts = await collect_contracts_from_channel(limit=220)
+    contracts = await collect_contracts_from_channel(limit=100)
     tokens = await pick_top_tokens(contracts)
     if tokens:
         banner = generate_worldwide_banner(tokens)
