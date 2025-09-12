@@ -1,7 +1,6 @@
 import os
 import re
 import random
-import time
 import asyncio
 import requests
 from io import BytesIO
@@ -23,23 +22,22 @@ FONTS_DIR = "fonts"
 FALLBACK_LOGO = "lapadtrending.png"
 
 USER_AGENTS = [
-    # Masaüstü
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
     "Mozilla/5.0 (X11; Ubuntu; Linux x86_64)",
-    # Mobil
     "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X)",
-    "Mozilla/5.0 (Linux; Android 10; SM-G975F)",
-    "Mozilla/5.0 (Linux; Android 11; Pixel 5)",
-    "Mozilla/5.0 (iPad; CPU OS 13_2 like Mac OS X)",
-    # Tarayıcı çeşitleri
-    "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/605.1.15",
-    "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:91.0) Gecko/20100101 Firefox/91.0",
-    "Mozilla/5.0 (Windows NT 10.0; WOW64; rv:45.0) Gecko/20100101 Firefox/45.0",
-    "Mozilla/5.0 (Linux; Android 9; SAMSUNG SM-G960U)",
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 15_2 like Mac OS X)",
-    "Mozilla/5.0 (Linux; Android 12; Pixel 6 Pro)",
+    "Mozilla/5.0 (Linux; Android 10; SM-G975F)"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.5993.117 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.5993.117 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.5993.117 Safari/537.36",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+    "Mozilla/5.0 (iPad; CPU OS 16_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.7 Mobile/15E148 Safari/604.1",
+    "Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.5993.117 Mobile Safari/537.36",
+    "Mozilla/5.0 (Linux; Android 12; Pixel 6 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.5993.117 Mobile Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:118.0) Gecko/20100101 Firefox/118.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.0; rv:118.0) Gecko/20100101 Firefox/118.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; Trident/7.0; rv:11.0) like Gecko",
+    "Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.1; Trident/6.0)" 
 ]
 
 CHANNEL_PARSERS = {
@@ -108,10 +106,12 @@ def fetch_token_info(token_address, retries=3):
             r = requests.get(url, headers=headers, timeout=12)
             if r.status_code == 200:
                 return r.json().get("pairs", [])
-            log_error(f"Dexscreener error {r.status_code}, attempt {attempt+1}")
+            else:
+                log_error(f"Dexscreener bad status {r.status_code}, retry {attempt+1}/{retries}")
         except Exception as e:
-            log_error(f"API error: {e}, attempt {attempt+1}")
-        time.sleep(1 + attempt)  # progressive backoff
+            log_error(f"Dexscreener API error: {e}, retry {attempt+1}/{retries}")
+        # küçük bir delay bırak (rate-limit yememek için)
+        asyncio.sleep(random.uniform(1.0, 2.5))
     return None
 
 def parse_social_links(pair_info):
@@ -164,7 +164,6 @@ def load_fonts():
         d = ImageFont.load_default()
         return d, d, d, d, d, d
 
-# ---------------- Tek Token Banner ----------------
 def generate_image_banner(token_name, symbol, chain, contract, logo_url, website_url, change, change_interval):
     try:
         if not os.path.exists(BANNER_PATH): log_error("Banner not found!"); return None
@@ -185,19 +184,32 @@ def generate_image_banner(token_name, symbol, chain, contract, logo_url, website
         circular_logo = Image.new("RGBA", (logo_size, logo_size), (0, 0, 0, 0))
         circular_logo.paste(logo, (0, 0), mask=mask)
         logo_x = (width - logo_size) // 2; logo_y = 220
+        border_size = logo_size + 20
+        border = Image.new("RGBA", (border_size, border_size), (0, 0, 0, 0))
+        border_draw = ImageDraw.Draw(border)
+        for i in range(10):
+            color = (255, 215 - i*10, 0 + i*20, 255)
+            border_draw.ellipse((i, i, border_size - i, border_size - i), outline=color, width=4)
+        banner.alpha_composite(border, (logo_x - 10, logo_y - 10))
         banner.paste(circular_logo, (logo_x, logo_y), circular_logo)
-        if change and change > 0:
-            perc_text = f"+{int(change)}%"
+        if change is not None and change_interval and change > 0:
+            perc_text = f"{int(change)}% Increased"
             perc_w = _textlength(draw, perc_text, font=font_change)
             perc_x = (width - perc_w) // 2; perc_y = logo_y - 60
-            draw.text((perc_x, perc_y), perc_text, font=font_change, fill="green")
+            draw.text((perc_x, perc_y), perc_text, font=font_change, fill="white")
         token_line = f"{token_name} ({(symbol or '').upper()})"
         tx = (width - _textlength(draw, token_line, font_token)) // 2
         draw.text((tx, logo_y + logo_size + 40), token_line, font=font_token, fill="white")
+        chain_y = logo_y + logo_size + 90
         cx = (width - _textlength(draw, chain.upper(), font_chain)) // 2
-        draw.text((cx, logo_y + logo_size + 90), chain.upper(), font=font_chain, fill="white")
+        draw.text((cx, chain_y), chain.upper(), font=font_chain, fill="white")
+        contract_y = chain_y + 40
         kx = (width - _textlength(draw, contract, font_contract)) // 2
-        draw.text((kx, logo_y + logo_size + 130), contract, font=font_contract, fill="white")
+        draw.text((kx, contract_y), contract, font=font_contract, fill="white")
+        if website_url:
+            wy = height - 80
+            wx = (width - _textlength(draw, website_url, font_web)) // 2
+            draw.text((wx, wy), website_url, font=font_web, fill="white")
         out = BytesIO(); banner.save(out, format="PNG"); out.name = "banner.png"; out.seek(0)
         log_success("Banner generated.")
         return out
@@ -212,15 +224,13 @@ def format_pair_message(pair):
     price = pair.get("priceUsd", "N/A")
     changes = pair.get("priceChange", {}) or {}
     best_change, best_int = select_best_change(changes)
-    if best_change is None or best_change <= 0:  # Negatif pump yok
-        return None, None
     liquidity = human_format(pair.get("liquidity", {}).get("usd", 0))
     mcap = human_format(pair.get("fdv", 0))
     contract = base.get("address", "N/A")
     chain = (pair.get("chainId", "EVM") or "EVM").capitalize()
     logo_url = base.get("logoUrl") or pair.get("info", {}).get("imageUrl")
     social_links, website_url, twitter_user = parse_social_links(pair)
-    headline = f"🟢 ${(symbol or '').upper()} <a href='https://t.me/lapad_announcement'>#Trending</a> Now Worldwide"
+    headline = f"{name} is #Trending now Worldwide. {best_change:.0f}% pumped in last {best_int}." if best_change and best_int else f"🐬 ${(symbol or '').upper()} Trending Now Worldwide"
     hashtags = f"#lapad #{(symbol or '').upper()} #Dexscreener #BullishMarketCap {twitter_user}".strip()
     message = f"""
 <b>{headline}</b>
@@ -240,32 +250,6 @@ def format_pair_message(pair):
     if not media_file: return None, None
     return media_file, message
 
-# ---------------- Worldwide Banner ----------------
-def chain_short(chain):
-    mapping = {
-    "Ethereum": "ETH",
-    "Bsc": "BSC",
-    "Solana": "SOL",
-    "Arbitrum": "ARB",
-    "Polygon": "POL",
-    "Avalanche": "AVAX",
-    "Fantom": "FTM",
-    "Optimism": "OP",
-    "Base": "BASE",
-    "Tron": "TRX",
-    "Cosmos": "ATOM",
-    "Near": "NEAR",
-    "Algorand": "ALGO",
-    "Aptos": "APT",
-    "Sui": "SUI",
-    "Harmony": "ONE",
-    "Kava": "KAVA",
-    "Cronos": "CRO",
-    "Celo": "CELO",
-    "ZkSync": "ZKS"
-}
-    return mapping.get(chain, chain.upper())
-
 def load_font_simple(size):
     try: return ImageFont.truetype("arialbd.ttf", size)
     except: return ImageFont.load_default()
@@ -274,37 +258,32 @@ def generate_worldwide_banner(tokens):
     try: banner = Image.open(BANNER_PATH).convert("RGBA")
     except: banner = Image.new("RGBA", (1000, 950), (20, 20, 30, 255))
     draw = ImageDraw.Draw(banner)
-    font_headline, font_token, _, _, _, font_change = load_fonts()
-    font_rank = ImageFont.truetype(os.path.join(FONTS_DIR, "arialbd.ttf"), size=32)
-
+    font_headline, font_token, font_chain, font_contract, font_web, font_change = load_fonts()
+    font_title  = font_headline
+    font_symbol = font_token
+    font_change = font_change
+    font_rank   = font_chain
     title = "Worldwide Top Trends"
-    tw = draw.textlength(title, font=font_headline)
-    draw.text(((banner.width - tw) // 2, 30), title, font=font_headline, fill="white")
-
+    tw = draw.textlength(title, font=font_title)
+    draw.text(((banner.width - tw) // 2, 30), title, font=font_title, fill="white")
     SIZE_BIG, SIZE_SMALL = 132, 108
     cx = banner.width // 2
     cy1, cy2, cy3 = 230, 360, 600
     gap2, gap3 = 420, 380
-    centers = [(cx, cy1), (cx - gap2 // 2, cy2), (cx + gap2 // 2, cy2),
-               (cx - gap3, cy3), (cx, cy3), (cx + gap3, cy3)]
-
+    centers = [(cx, cy1), (cx - gap2 // 2, cy2), (cx + gap2 // 2, cy2), (cx - gap3, cy3), (cx, cy3), (cx + gap3, cy3)]
     def paste_circle(center, size, logo_img, gold=False):
         x = center[0] - size // 2; y = center[1] - size // 2
-        mask = Image.new("L", (size, size), 0)
-        ImageDraw.Draw(mask).ellipse((0, 0, size, size), fill=255)
-        circ = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        circ.paste(logo_img, (0, 0), mask=mask)
+        mask = Image.new("L", (size, size), 0); ImageDraw.Draw(mask).ellipse((0, 0, size, size), fill=255)
+        circ = Image.new("RGBA", (size, size), (0, 0, 0, 0)); circ.paste(logo_img, (0, 0), mask=mask)
         ring = ImageDraw.Draw(circ)
         if gold:
             ring.ellipse((2, 2, size - 2, size - 2), outline=(255, 215, 0, 255), width=6)
+            ring.ellipse((6, 6, size - 6, size - 6), outline=(255, 235, 120, 255), width=3)
         else:
             ring.ellipse((2, 2, size - 2, size - 2), outline=(255, 255, 255, 255), width=4)
         banner.paste(circ, (x, y), circ)
         return x, y, size
-
     for idx, (chg, tf, sym, chain, logo_url, url, tw_user, tg_link) in enumerate(tokens[:6]):
-        if chg <= 0: 
-            continue
         size = SIZE_BIG if idx == 0 else SIZE_SMALL
         try:
             if logo_url:
@@ -315,32 +294,40 @@ def generate_worldwide_banner(tokens):
         except:
             logo = Image.open(FALLBACK_LOGO).convert("RGBA").resize((size, size)) if os.path.exists(FALLBACK_LOGO) else Image.new("RGBA", (size, size), (80, 80, 100, 255))
         x, y, size = paste_circle(centers[idx], size, logo, gold=(idx == 0))
-
         rank_text = f"#{idx+1}"
         rw = draw.textlength(rank_text, font=font_rank)
         draw.text((x + (size - rw)//2, y - 38), rank_text, font=font_rank, fill="yellow")
-
         sym_text = f"${sym}"
-        sw = draw.textlength(sym_text, font=font_token)
-        draw.text((x + (size - sw)//2, y + size + 10), sym_text, font=font_token, fill="white")
-
-        if chg > 0:
-            chg_text = f"+{chg:.0f}%"
-            cw = draw.textlength(chg_text, font=font_change)
-            draw.text((x + (size - cw)//2, y + size + 44), chg_text, font=font_change, fill=(0,255,0,255))
-
+        sw = draw.textlength(sym_text, font=font_symbol)
+        draw.text((x + (size - sw)//2, y + size + 10), sym_text, font=font_symbol, fill="white")
+        chg_text = f"+{chg:.0f}%"
+        cw = draw.textlength(chg_text, font=font_change)
+        draw.text((x + (size - cw)//2, y + size + 44), chg_text, font=font_change, fill=(0, 255, 0, 255))
     out = BytesIO(); banner.save(out, format="PNG"); out.name = "trends.png"; out.seek(0)
+    return out
+
+def generate_placeholder_trends_banner():
+    w, h = 1000, 340
+    img = Image.new("RGBA", (w, h), (20, 20, 30, 255))
+    d = ImageDraw.Draw(img)
+    f1 = load_font_simple(48); f2 = load_font_simple(26)
+    t1 = "Worldwide Top Trends"
+    t2 = "Collecting data from channel..."
+    tw1 = d.textlength(t1, font=f1); tw2 = d.textlength(t2, font=f2)
+    d.text(((w - tw1)//2, 80), t1, font=f1, fill="white")
+    d.text(((w - tw2)//2, 160), t2, font=f2, fill=(200,200,200,255))
+    out = BytesIO(); img.save(out, format="PNG"); out.name = "trends.png"; out.seek(0)
     return out
 
 def build_trends_caption(tokens):
     caption = "🔥 <b>Worldwide Top #Trends Diamonds Now | Live Update</b>\n\n"
-    rank = 1
-    for chg, tf, sym, chain, logo_url, url, tw_user, tg_link in tokens[:8]:
-        if chg <= 0: 
-            continue
+    for idx, (chg, tf, sym, chain, logo_url, url, tw_user, tg_link) in enumerate(tokens[:8], start=1):
         link = tg_link or url or "https://dexscreener.com"
-        caption += f"<b>#{rank} {sym} | {chain_short(chain)} | +{chg:.0f}%</b>\n"
-        rank += 1
+        caption += f"{idx}️⃣ <a href='{link}'>${sym} | {chain}</a> <b>+{chg:.0f}%</b> ({tf})\n"
+    handles = []
+    for _, _, sym, chain, _, _, tw_user, _ in tokens[:6]:
+        if tw_user: handles.append("@" + tw_user.split("/")[-1])
+    if handles: caption += "\n" + " | ".join(handles)
     caption += "\n#Dexscreener #BullishMarketCap #Trend\n"
     caption += "\n👉 <b><a href='https://t.me/Lets_Announcepad'>Join Community</a> | <a href='https://t.me/Mike_letsannouncepad'>Apply Trend Now</a></b>"
     return caption
@@ -361,7 +348,7 @@ async def pick_top_tokens(contracts):
         if not pairs: continue
         for pair in pairs:
             change, tf = select_best_change(pair.get("priceChange", {}) or {})
-            if change is None or change <= 0: continue
+            if change is None: continue
             base = pair.get("baseToken", {}) or {}
             symbol = base.get("symbol", "???")
             if symbol in seen_symbols: continue
@@ -397,15 +384,15 @@ async def send_or_update_trends():
         banner = generate_worldwide_banner(tokens)
         caption = build_trends_caption(tokens)
     else:
-        banner = None
+        banner = generate_placeholder_trends_banner()
         caption = "🔥 <b>Worldwide Top #Trends Diamonds Now | Live Update</b>\n\n<i>Not enough data yet. Collecting...</i>"
         log_info("Worldwide: no data, sending placeholder.")
     if TREND_MSG_ID is None:
-        msg = await client.send_message(TARGET_CHANNEL_ID, caption, parse_mode="HTML", link_preview=False)
+        msg = await client.send_file(TARGET_CHANNEL_ID, file=banner, caption=caption, parse_mode="HTML", link_preview=False)
         TREND_MSG_ID = msg.id
         log_success(f"Worldwide: first message sent #{TREND_MSG_ID}.")
     else:
-        await client.edit_message(TARGET_CHANNEL_ID, TREND_MSG_ID, text=caption, parse_mode="HTML", link_preview=False)
+        await client.edit_message(TARGET_CHANNEL_ID, TREND_MSG_ID, file=banner, text=caption, parse_mode="HTML", link_preview=False)
         log_success("Worldwide: message updated.")
 
 async def periodic_task():
@@ -436,7 +423,7 @@ async def handler(event):
             liquidity_usd = pair.get("liquidity", {}).get("usd", 0) or 0
             if liquidity_usd < 10000: log_info("Low liquidity, skipped."); continue
             media, msg = format_pair_message(pair)
-            if not media or not msg: log_info("Negative or invalid, skipped."); break
+            if not media or not msg: log_error("Media/message not created."); break
             try:
                 await client.send_file(TARGET_CHANNEL_ID, file=media, caption=msg, parse_mode="HTML", link_preview=False)
                 log_success(f"Message sent: {token}")
