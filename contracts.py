@@ -163,7 +163,6 @@ def load_fonts():
         log_error(f"Font load failed: {e}, fallback.")
         d = ImageFont.load_default()
         return d, d, d, d, d, d
-
 def generate_image_banner(token_name, symbol, chain, contract, logo_url, website_url, change, change_interval):
     try:
         if not os.path.exists(BANNER_PATH): log_error("Banner not found!"); return None
@@ -174,7 +173,7 @@ def generate_image_banner(token_name, symbol, chain, contract, logo_url, website
         logo = Image.open(BytesIO(resp.content)).convert("RGBA")
         font_headline, font_token, font_chain, font_contract, font_web, font_change = load_fonts()
         draw = ImageDraw.Draw(banner)
-        headline = f"🟢 ${(symbol or '').upper()} #Trending Now Worldwide"
+        headline = f" ${(symbol or '').upper()} #Trending Now Worldwide"
         hx = (width - _textlength(draw, headline, font_headline)) // 2
         draw.text((hx, 60), headline, font=font_headline, fill="white")
         logo_size = 300
@@ -349,10 +348,15 @@ async def pick_top_tokens(contracts):
         for pair in pairs:
             change, tf = select_best_change(pair.get("priceChange", {}) or {})
             if change is None: continue
+
+            # 🔥 %50 – %500 arası pump filtre
+            if change < 50 or change > 500: continue
+
             base = pair.get("baseToken", {}) or {}
             symbol = base.get("symbol", "???")
             if symbol in seen_symbols: continue
             seen_symbols.add(symbol)
+
             logo = base.get("logoUrl") or (pair.get("info", {}) or {}).get("imageUrl")
             chain = (pair.get("chainId") or "EVM").capitalize()
             url = pair.get("url", "https://dexscreener.com")
@@ -361,6 +365,10 @@ async def pick_top_tokens(contracts):
             for s in socials:
                 if s.get("type") == "twitter": tw_user = s.get("url")
                 if s.get("type") == "telegram": tg_link = s.get("url")
+
+            # 🔥 Twitter hesabı olmayanları atla
+            if not tw_user: continue
+
             token_changes.append((change, tf, symbol, chain, logo, url, tw_user, tg_link))
     top_tokens = sorted(token_changes, key=lambda x: x[0], reverse=True)[:8]
     log_info(f"Worldwide: top token count {len(top_tokens)}.")
@@ -373,13 +381,10 @@ async def find_existing_trend_message_id():
             return m.id
     return None
 
-async def send_or_update_trends():
-    global TREND_MSG_ID
-    if TREND_MSG_ID is None:
-        TREND_MSG_ID = await find_existing_trend_message_id()
-        if TREND_MSG_ID: log_info(f"Worldwide: found existing message #{TREND_MSG_ID}.")
+async def send_trends_post():
     contracts = await collect_contracts_from_channel(limit=100)
     tokens = await pick_top_tokens(contracts)
+
     if tokens:
         banner = generate_worldwide_banner(tokens)
         caption = build_trends_caption(tokens)
@@ -387,21 +392,32 @@ async def send_or_update_trends():
         banner = generate_placeholder_trends_banner()
         caption = "🔥 <b>Worldwide Top #Trends Diamonds Now | Live Update</b>\n\n<i>Not enough data yet. Collecting...</i>"
         log_info("Worldwide: no data, sending placeholder.")
-    if TREND_MSG_ID is None:
-        msg = await client.send_file(TARGET_CHANNEL_ID, file=banner, caption=caption, parse_mode="HTML", link_preview=False)
-        TREND_MSG_ID = msg.id
-        log_success(f"Worldwide: first message sent #{TREND_MSG_ID}.")
-    else:
-        await client.edit_message(TARGET_CHANNEL_ID, TREND_MSG_ID, file=banner, text=caption, parse_mode="HTML", link_preview=False)
-        log_success("Worldwide: message updated.")
+
+    try:
+        await client.send_file(
+            TARGET_CHANNEL_ID,
+            file=banner,
+            caption=caption,
+            parse_mode="HTML",
+            link_preview=False
+        )
+        log_success("Worldwide: new message posted.")
+    except Exception as e:
+        log_error(f"Send error: {e}")
+
 
 async def periodic_task():
+    # Bot ilk açıldığında hemen bir post atsın
+    await send_trends_post()
+
     while True:
         try:
-            await send_or_update_trends()
+            await send_trends_post()
         except Exception as e:
             log_error(f"Worldwide error: {e}")
-        await asyncio.sleep(3600)
+        # 🔥 Yarım saatte bir tekrar post at
+        await asyncio.sleep(1800)
+
 
 @client.on(events.NewMessage(chats=list(CHANNEL_PARSERS.keys())))
 async def handler(event):
@@ -415,21 +431,35 @@ async def handler(event):
         log_error(f"Parser error: {e}")
         return
     if not tokens: return
+
     for token in tokens:
         log_info(f"Token found: {token}")
         pairs = fetch_token_info(token)
-        if not pairs: log_error("No DexScreener result."); continue
+        if not pairs: 
+            log_error("No DexScreener result.")
+            continue
         for pair in pairs:
             liquidity_usd = pair.get("liquidity", {}).get("usd", 0) or 0
-            if liquidity_usd < 10000: log_info("Low liquidity, skipped."); continue
+            if liquidity_usd < 10000: 
+                log_info("Low liquidity, skipped.")
+                continue
             media, msg = format_pair_message(pair)
-            if not media or not msg: log_error("Media/message not created."); break
+            if not media or not msg: 
+                log_error("Media/message not created.")
+                break
             try:
-                await client.send_file(TARGET_CHANNEL_ID, file=media, caption=msg, parse_mode="HTML", link_preview=False)
+                await client.send_file(
+                    TARGET_CHANNEL_ID,
+                    file=media,
+                    caption=msg,
+                    parse_mode="HTML",
+                    link_preview=False
+                )
                 log_success(f"Message sent: {token}")
             except Exception as e:
                 log_error(f"Send error: {e}")
             break
+
 
 if __name__ == "__main__":
     log_success("Bot starting...")
