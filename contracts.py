@@ -322,11 +322,25 @@ def build_trends_caption(tokens):
     caption = "🔥 <b>Worldwide Top #Trends Diamonds Now | Live Update</b>\n\n"
     for idx, (chg, tf, sym, chain, logo_url, url, tw_user, tg_link) in enumerate(tokens[:8], start=1):
         link = tg_link or url or "https://dexscreener.com"
-        caption += f"{idx}️⃣ <a href='{link}'>${sym} | {chain}</a> <b>+{chg:.0f}%</b> ({tf})\n"
+
+        if idx == 1:
+            rank_icon = "🥇📊"
+        elif idx == 2:
+            rank_icon = "🥈📊"
+        elif idx == 3:
+            rank_icon = "🥉📊"
+        else:
+            rank_icon = "📊🎗"
+
+        caption += f"{rank_icon} <a href='{link}'>${sym} | {chain}</a> <b>+{chg:.0f}%</b> ({tf})\n"
+
     handles = []
     for _, _, sym, chain, _, _, tw_user, _ in tokens[:6]:
-        if tw_user: handles.append("@" + tw_user.split("/")[-1])
-    if handles: caption += "\n" + " | ".join(handles)
+        if tw_user:
+            handles.append("@" + tw_user.split("/")[-1])
+    if handles:
+        caption += "\n" + " | ".join(handles)
+
     caption += "\n#Dexscreener #BullishMarketCap #Trend\n"
     caption += "\n👉 <b><a href='https://t.me/Lets_Announcepad'>Join Community</a> | <a href='https://t.me/Mike_letsannouncepad'>Apply Trend Now</a></b>"
     return caption
@@ -350,7 +364,7 @@ async def pick_top_tokens(contracts):
             if change is None: continue
 
             # 🔥 %50 – %500 arası pump filtre
-            if change < 50 or change > 500: continue
+            if change < 10 or change > 999: continue
 
             base = pair.get("baseToken", {}) or {}
             symbol = base.get("symbol", "???")
@@ -382,16 +396,15 @@ async def find_existing_trend_message_id():
     return None
 
 async def send_trends_post():
-    contracts = await collect_contracts_from_channel(limit=100)
+    contracts = await collect_contracts_from_channel(limit=150)
     tokens = await pick_top_tokens(contracts)
 
-    if tokens:
-        banner = generate_worldwide_banner(tokens)
-        caption = build_trends_caption(tokens)
-    else:
-        banner = generate_placeholder_trends_banner()
-        caption = "🔥 <b>Worldwide Top #Trends Diamonds Now | Live Update</b>\n\n<i>Not enough data yet. Collecting...</i>"
-        log_info("Worldwide: no data, sending placeholder.")
+    if not tokens:
+        log_info("Worldwide: no data, skipping post.")
+        return  # ❌ Artık mesaj atmayacak
+
+    banner = generate_worldwide_banner(tokens)
+    caption = build_trends_caption(tokens)
 
     try:
         await client.send_file(
