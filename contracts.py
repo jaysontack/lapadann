@@ -155,10 +155,13 @@ def _textlength(draw, text, font):
 
 def select_best_change(changes: dict):
     best_val, best_int = None, None
+    # Önce pozitif değişimleri ara
     for interval in ["h1", "h6", "h24"]:
         val = changes.get(interval)
-        if val is not None:
-            if best_val is None or abs(val) > abs(best_val): best_val, best_int = val, interval
+        if val is not None and val > 0:
+            if best_val is None or val > best_val:
+                best_val, best_int = val, interval
+    # Eğer hiç pozitif yoksa None dön
     return best_val, best_int
 
 def load_fonts():
@@ -233,6 +236,9 @@ def format_pair_message(pair):
     price = pair.get("priceUsd", "N/A")
     changes = pair.get("priceChange", {}) or {}
     best_change, best_int = select_best_change(changes)
+    if not best_change or best_change <= 0:
+        log_info("Skipped: negative or zero change.")
+        return None, None
     liquidity = human_format(pair.get("liquidity", {}).get("usd", 0))
     mcap = human_format(pair.get("fdv", 0))
     contract = base.get("address", "N/A")
@@ -406,7 +412,9 @@ async def pick_top_tokens(contracts):
         if not pairs: continue
         for pair in pairs:
             change, tf = select_best_change(pair.get("priceChange", {}) or {})
-            if change is None: continue
+            if change is None or change <= 0:
+                continue
+
 
             # 🔥 %50 – %500 arası pump filtre
             if change < 10 or change > 999: continue
