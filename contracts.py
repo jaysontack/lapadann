@@ -116,26 +116,37 @@ def fetch_token_info(token_address, retries=3):
 
 def parse_social_links(pair_info):
     info = pair_info.get("info", {}) or {}
-    inline_links, twitter_username = [], ""
+    inline_links, twitter_username, tg_link = [], "", None
     socials = info.get("socials", [])
+
     if isinstance(socials, list):
         for s in socials:
-            url = s.get("url"); stype = (s.get("type") or "").lower()
+            url = s.get("url")
+            stype = (s.get("type") or "").lower()
             if url:
                 if stype == "twitter":
                     parsed = re.search(r"(?:twitter\.com|x\.com)/([A-Za-z0-9_]+)", url)
-                    if parsed: twitter_username = f"@{parsed.group(1)}"; inline_links.append(f"<a href='{url}'>🐦 Twitter</a>")
-                elif stype == "telegram": inline_links.append(f"<a href='{url}'>💬 Telegram</a>")
-                elif stype: inline_links.append(f"<a href='{url}'>📢 {stype.capitalize()}</a>")
-                else: inline_links.append(f"<a href='{url}'>🔗 Link</a>")
+                    if parsed:
+                        twitter_username = f"@{parsed.group(1)}"
+                    inline_links.append(f"<a href='{url}'>💥 Twitter</a>")
+                elif stype == "telegram":
+                    tg_link = url
+                    inline_links.append(f"<a href='{url}'>💥 Telegram</a>")
+                elif stype:
+                    inline_links.append(f"<a href='{url}'>📢 {stype.capitalize()}</a>")
+                else:
+                    inline_links.append(f"<a href='{url}'>🔗 Link</a>")
+
     websites = info.get("websites", [])
     website_url = ""
     if isinstance(websites, list):
         for site in websites:
             if isinstance(site, dict):
                 url = site.get("url")
-                if url and not website_url: website_url = url
-    return " | ".join(inline_links), website_url, twitter_username
+                if url and not website_url:
+                    website_url = url
+
+    return " | ".join(inline_links), website_url, twitter_username, tg_link
 
 def _textlength(draw, text, font):
     if hasattr(draw, "textlength"): return int(draw.textlength(text, font=font))
@@ -215,7 +226,6 @@ def generate_image_banner(token_name, symbol, chain, contract, logo_url, website
     except Exception as e:
         log_error(f"Image error: {e}")
         return None
-
 def format_pair_message(pair):
     base = pair.get("baseToken", {}) or {}
     symbol = base.get("symbol", "???")
@@ -228,9 +238,35 @@ def format_pair_message(pair):
     contract = base.get("address", "N/A")
     chain = (pair.get("chainId", "EVM") or "EVM").capitalize()
     logo_url = base.get("logoUrl") or pair.get("info", {}).get("imageUrl")
-    social_links, website_url, twitter_user = parse_social_links(pair)
-    headline = f"🟢 {name} is <a href='https://t.me/lapad_announcement'>#Trending</a> now Worldwide{f'. {best_change:.0f}% pumped in last {best_int}.' if best_change and best_int else ''}"
-    hashtags = f"#lapad #{(symbol or '').upper()} #Dexscreener #BullishMarketCap {twitter_user}".strip()
+
+    # now returns 4 values (social links + website + twitter + telegram)
+    social_links, website_url, twitter_user, tg_link = parse_social_links(pair)
+
+    # 🔥 Filter: must have Telegram + (Twitter or Website)
+    if not (tg_link and (twitter_user or website_url)):
+        log_info("Skipped: must have Telegram + (Twitter or Website).")
+        return None, None
+
+    headline = f"🟢 {name} is <a href='https://t.me/lapad_announcement'>#Trending</a> Worldwide{f'. Pumped {best_change:.0f}% in the last {best_int}.' if best_change and best_int else ''}"
+
+    # 🔥 Chain hashtag mapping
+    chain_hashtags = {
+        "Ethereum": "#ETH",
+        "Eth": "#ETH",
+        "Bsc": "#BSC",
+        "Binance": "#BSC",
+        "Arbitrum": "#ARB",
+        "Polygon": "#MATIC",
+        "Solana": "#SOL",
+        "Avalanche": "#AVAX",
+        "Optimism": "#OP",
+        "Fantom": "#FTM",
+        "Base": "#BASE",
+    }
+    chain_tag = chain_hashtags.get(chain, f"#{chain.upper()}")  # fallback to generic
+
+    hashtags = f"#lapad #{(symbol or '').upper()} #Dexscreener #BullishMarketCap {chain_tag} {twitter_user}".strip()
+
     message = f"""
 <b>{headline}</b>
 
@@ -238,15 +274,24 @@ def format_pair_message(pair):
 <b>🧬 Contract:</b> <code>{contract}</code>
 
 <b>💵 Price:</b> ${price}
-<b>🤠 Mcap:</b> ${mcap}
+<b>🤠 Market Cap:</b> ${mcap}
 <b>💧 Liquidity:</b> ${liquidity}
 
 {social_links}
 
 {hashtags}
 """.strip()
-    media_file = generate_image_banner(name, symbol, chain, contract, logo_url, website_url, best_change, best_int) if logo_url else None
-    if not media_file: return None, None
+
+    media_file = generate_image_banner(
+        name, symbol, chain, contract, logo_url, website_url, best_change, best_int
+    ) if logo_url else None
+
+    if not media_file:
+        return None, None
+
+    # 🔥 Sponsored footer
+    message += "\n\n💠 Sponsored: <a href='https://t.me/klinkfinance'>Klink Finance IDO on ChainGPT</a>"
+
     return media_file, message
 
 def load_font_simple(size):
@@ -479,3 +524,4 @@ if __name__ == "__main__":
     client.start()
     client.loop.create_task(periodic_task())
     client.run_until_disconnected()
+
