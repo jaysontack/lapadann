@@ -236,26 +236,29 @@ def format_pair_message(pair):
     price = pair.get("priceUsd", "N/A")
     changes = pair.get("priceChange", {}) or {}
     best_change, best_int = select_best_change(changes)
+
     if not best_change or best_change <= 0:
         log_info("Skipped: negative or zero change.")
         return None, None
+
     liquidity = human_format(pair.get("liquidity", {}).get("usd", 0))
     mcap = human_format(pair.get("fdv", 0))
     contract = base.get("address", "N/A")
     chain = (pair.get("chainId", "EVM") or "EVM").capitalize()
     logo_url = base.get("logoUrl") or pair.get("info", {}).get("imageUrl")
+    header_url = (pair.get("info") or {}).get("headerUrl")   # 🔥 Header URL öncelikli
 
-    # now returns 4 values (social links + website + twitter + telegram)
+    # sosyal linkleri çek
     social_links, website_url, twitter_user, tg_link = parse_social_links(pair)
 
-    # 🔥 Filter: must have Telegram + (Twitter or Website)
+    # 🔥 Filtre: Telegram + (Twitter veya Website) zorunlu
     if not (tg_link and (twitter_user or website_url)):
         log_info("Skipped: must have Telegram + (Twitter or Website).")
         return None, None
 
+    # mesaj gövdesi
     headline = f"🟢 {name} is <a href='https://t.me/lapad_announcement'>#Trending</a> Worldwide{f'. Pumped {best_change:.0f}% in the last {best_int}.' if best_change and best_int else ''}"
 
-    # 🔥 Chain hashtag mapping
     chain_hashtags = {
         "Ethereum": "#ETH",
         "Eth": "#ETH",
@@ -269,7 +272,7 @@ def format_pair_message(pair):
         "Fantom": "#FTM",
         "Base": "#BASE",
     }
-    chain_tag = chain_hashtags.get(chain, f"#{chain.upper()}")  # fallback to generic
+    chain_tag = chain_hashtags.get(chain, f"#{chain.upper()}")
 
     hashtags = f"#lapad #{(symbol or '').upper()} #Dexscreener #BullishMarketCap {chain_tag} {twitter_user}".strip()
 
@@ -288,14 +291,28 @@ def format_pair_message(pair):
 {hashtags}
 """.strip()
 
-    media_file = generate_image_banner(
-        name, symbol, chain, contract, logo_url, website_url, best_change, best_int
-    ) if logo_url else None
+    # 🔥 Öncelik: header URL
+    media_file = None
+    if header_url:
+        try:
+            resp = requests.get(header_url, timeout=8)
+            if resp.status_code == 200:
+                media_file = BytesIO(resp.content)
+                media_file.name = "header.png"
+                log_success("Header URL kullanıldı ✅")
+        except Exception as e:
+            log_error(f"Header url indirilemedi: {e}")
+
+    # 🔥 Eğer header yoksa → banner üret
+    if not media_file:
+        media_file = generate_image_banner(
+            name, symbol, chain, contract, logo_url, website_url, best_change, best_int
+        )
 
     if not media_file:
         return None, None
 
-    # 🔥 Sponsored footer
+    # sponsor footer ekle
     message += "\n\n💠 Sponsored: <a href='https://t.me/klinkfinance'>Klink Finance IDO on ChainGPT</a>"
 
     return media_file, message
