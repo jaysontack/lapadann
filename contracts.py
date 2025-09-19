@@ -245,31 +245,33 @@ def format_pair_message(pair):
     mcap = human_format(pair.get("fdv", 0))
     contract = base.get("address", "N/A")
     chain = (pair.get("chainId", "EVM") or "EVM").capitalize()
-    logo_url = base.get("logoUrl") or pair.get("info", {}).get("imageUrl")
-    header_url = (pair.get("info") or {}).get("headerUrl")   # 🔥 Header URL öncelikli
 
-    # sosyal linkleri çek
+    info = pair.get("info") or {}
+    logo_url = base.get("logoUrl") or info.get("imageUrl")
+
+    # 🔥 Header sırası: header → headerUrl → openGraph
+    header_url = info.get("header") or info.get("headerUrl") or info.get("openGraph")
+
+    # Sosyaller
     social_links, website_url, twitter_user, tg_link = parse_social_links(pair)
 
-    # 🔥 Filtre: Telegram + (Twitter veya Website) zorunlu
+    # 🔥 Zorunlu filtre: Telegram + (Twitter veya Website)
     if not (tg_link and (twitter_user or website_url)):
         log_info("Skipped: must have Telegram + (Twitter or Website).")
         return None, None
 
-    # mesaj gövdesi
-    headline = f"🟢 {name} is <a href='https://t.me/lapad_announcement'>#Trending</a> Worldwide{f'. Pumped {best_change:.0f}% in the last {best_int}.' if best_change and best_int else ''}"
+    # Mesaj gövdesi
+    headline = (
+        f"🟢 {name} is <a href='https://t.me/lapad_announcement'>#Trending</a> Worldwide"
+        f"{f'. Pumped {best_change:.0f}% in the last {best_int}.' if best_change and best_int else ''}"
+    )
 
     chain_hashtags = {
-        "Ethereum": "#ETH",
-        "Eth": "#ETH",
-        "Bsc": "#BSC",
-        "Binance": "#BSC",
-        "Arbitrum": "#ARB",
-        "Polygon": "#MATIC",
-        "Solana": "#SOL",
-        "Avalanche": "#AVAX",
-        "Optimism": "#OP",
-        "Fantom": "#FTM",
+        "Ethereum": "#ETH", "Eth": "#ETH",
+        "Bsc": "#BSC", "Binance": "#BSC",
+        "Arbitrum": "#ARB", "Polygon": "#MATIC",
+        "Solana": "#SOL", "Avalanche": "#AVAX",
+        "Optimism": "#OP", "Fantom": "#FTM",
         "Base": "#BASE",
     }
     chain_tag = chain_hashtags.get(chain, f"#{chain.upper()}")
@@ -291,19 +293,24 @@ def format_pair_message(pair):
 {hashtags}
 """.strip()
 
-    # 🔥 Öncelik: header URL
+    # 🔥 ÖNCE header görselini dene (üzerine yazı yazmadan)
     media_file = None
     if header_url:
         try:
-            resp = requests.get(header_url, timeout=8)
-            if resp.status_code == 200:
+            headers = {"User-Agent": random.choice(USER_AGENTS)}
+            resp = requests.get(header_url, headers=headers, timeout=10)
+            ctype = (resp.headers.get("Content-Type") or "").lower()
+            if resp.status_code == 200 and "image" in ctype and resp.content:
                 media_file = BytesIO(resp.content)
                 media_file.name = "header.png"
+                media_file.seek(0)
                 log_success("Header URL kullanıldı ✅")
+            else:
+                log_error(f"Header fetch invalid: status={resp.status_code}, ctype={ctype}")
         except Exception as e:
             log_error(f"Header url indirilemedi: {e}")
 
-    # 🔥 Eğer header yoksa → banner üret
+    # 🔥 Header yoksa/başarısızsa → banner üret
     if not media_file:
         media_file = generate_image_banner(
             name, symbol, chain, contract, logo_url, website_url, best_change, best_int
@@ -312,10 +319,11 @@ def format_pair_message(pair):
     if not media_file:
         return None, None
 
-    # sponsor footer ekle
+    # Sponsor footer
     message += "\n\n💠 Sponsored: <a href='https://t.me/klinkfinance'>Klink Finance IDO on ChainGPT</a>"
 
     return media_file, message
+
 
 def load_font_simple(size):
     try: return ImageFont.truetype("arialbd.ttf", size)
@@ -549,4 +557,3 @@ if __name__ == "__main__":
     client.start()
     client.loop.create_task(periodic_task())
     client.run_until_disconnected()
-
